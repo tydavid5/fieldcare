@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b6e4f">
+<meta name="description" content="FieldCare is an offline triage assistant for community health workers in rural Nigeria. It works without signal and gets smarter when it finds signal.">
+<title>FieldCare, offline triage for community health workers</title>
+<link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark" aria-hidden="true">FC</div>
+    <div>
+      <h1>FieldCare</h1>
+      <p class="tagline">Offline triage for community health workers</p>
+    </div>
+  </div>
+  <div class="pills">
+    <span id="netPill" class="pill pill-online">Online</span>
+    <span id="demoPill" class="pill pill-demo">Demo mode</span>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="card disclaimer" aria-label="Important note">
+    <strong>Please read this first.</strong>
+    <p>FieldCare is a triage aid, not a diagnosis. It helps a health worker decide how quickly a patient needs care. The health worker makes the final call. If a patient has a danger sign, refer them at once.</p>
+  </section>
+
+  <section class="card" id="demoCard">
+    <h2>Demo mode</h2>
+    <p id="demoText">Demo mode is on. The triage and care plan answers are simulated with realistic examples, so you can try the full flow without a live AI connection. The on-device and cloud steps are labelled, so you can see where each answer would come from.</p>
+    <label class="switch-row">
+      <input type="checkbox" id="demoToggle" checked>
+      <span>Demo mode on</span>
+    </label>
+    <p class="fine" id="demoNote">To use live Firebase AI Logic, add a real Firebase config in src/config.js and turn demo mode off. See the README for the steps.</p>
+  </section>
+
+  <section class="card">
+    <h2>New case</h2>
+    <form id="caseForm">
+      <label class="field">
+        <span>Patient label (optional)</span>
+        <input type="text" id="patientLabel" placeholder="e.g. Patient A, or a first name" autocomplete="off">
+      </label>
+      <label class="field">
+        <span>Age group</span>
+        <select id="ageGroup">
+          <option value="Under 5 years">Under 5 years</option>
+          <option value="5 to 17 years">5 to 17 years</option>
+          <option value="18 to 49 years" selected>18 to 49 years</option>
+          <option value="50 years or older">50 years or older</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Symptoms</span>
+        <textarea id="symptoms" rows="4" placeholder="Describe the symptoms in plain words. Example: fever for 3 days, chills, headache, vomiting."></textarea>
+      </label>
+      <div class="row">
+        <button type="button" id="voiceBtn" class="btn btn-ghost">Speak symptoms</button>
+        <span id="voiceNote" class="fine"></span>
+      </div>
+      <div class="samples">
+        <span class="fine">Try a sample case:</span>
+        <button type="button" class="chip-btn" data-sample="routine">Mild cough, child</button>
+        <button type="button" class="chip-btn" data-sample="malaria">Fever and chills, child</button>
+        <button type="button" class="chip-btn" data-sample="dehydration">Diarrhoea, toddler</button>
+        <button type="button" class="chip-btn" data-sample="pregnancy">Headache and swelling, pregnant</button>
+      </div>
+      <button type="submit" id="assessBtn" class="btn btn-primary btn-big">Check on device</button>
+      <p class="fine" id="assessStatus"></p>
+    </form>
+  </section>
+
+  <section class="card hidden" id="triageCard" aria-live="polite">
+    <div class="card-head">
+      <h2>Triage result</h2>
+      <span id="triageSource" class="badge badge-device">On-device</span>
+    </div>
+    <p class="level" id="triageLevel">ROUTINE</p>
+    <p id="triageMeaning" class="meaning"></p>
+    <p id="triageSummary"></p>
+    <div id="redFlagBox" class="redflag hidden">
+      <strong>Danger signs found. Refer at once.</strong>
+      <ul id="redFlagList"></ul>
+    </div>
+    <h3>Ask the patient</h3>
+    <ol id="triageQuestions" class="q-list"></ol>
+    <div id="carePlanArea">
+      <button type="button" id="carePlanBtn" class="btn btn-primary btn-big">Get care plan from the cloud</button>
+      <p class="fine" id="carePlanStatus"></p>
+    </div>
+  </section>
+
+  <section class="card hidden" id="planCard" aria-live="polite">
+    <div class="card-head">
+      <h2>Care plan</h2>
+      <span id="planSource" class="badge badge-cloud">Cloud</span>
+    </div>
+    <h3>What to do now</h3>
+    <ol id="planSteps" class="q-list"></ol>
+    <h3>Possible causes</h3>
+    <ul id="planDifferential" class="plain-list"></ul>
+    <h3>Watch for these danger signs</h3>
+    <ul id="planWatch" class="plain-list"></ul>
+    <p id="planReferral"></p>
+    <p id="planFollowUp" class="fine"></p>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Saved cases</h2>
+      <span id="caseCount" class="pill pill-soft">0 cases</span>
+    </div>
+    <p class="fine">Cases are saved on this device. When you are offline, new cases wait in the queue and the care plan is added when you are back online.</p>
+    <div id="caseList" class="case-list"></div>
+    <p id="emptyCases" class="fine">No cases yet. Assess a patient to save the first case.</p>
+  </section>
+
+  <details class="card">
+    <summary><strong>Danger signs to know by heart</strong></summary>
+    <ul class="plain-list">
+      <li>Difficulty breathing or fast breathing</li>
+      <li>Chest pain</li>
+      <li>Convulsions or fits</li>
+      <li>Unconscious, or very drowsy and hard to wake</li>
+      <li>Bleeding that will not stop</li>
+      <li>No urine, very dry mouth, sunken eyes, or no tears when crying</li>
+      <li>High fever with a stiff neck or a rash</li>
+      <li>Swollen face, hands or feet with headache or blurred vision in pregnancy</li>
+      <li>A baby who will not feed</li>
+    </ul>
+    <p class="fine">Any one of these means urgent referral. Do not wait for the care plan.</p>
+  </details>
+
+  <section class="card">
+    <h2>How it works</h2>
+    <ol class="steps">
+      <li><strong>On-device, offline.</strong> The triage check runs on the device with Gemini Nano, so it works with no signal and patient details stay on the device.</li>
+      <li><strong>Cloud, when online.</strong> When the device finds signal, Gemini Flash in the cloud adds a fuller care plan, a short list of possible causes, and what to watch for.</li>
+      <li><strong>Offline queue.</strong> Cases assessed offline are saved on the device and sync their care plan when the connection returns.</li>
+    </ol>
+    <p class="fine">Built with Firebase AI Logic hybrid inference for the #BuildHybridAI 2026 hackathon. All AI inference goes through Firebase AI Logic. No other model API is called.</p>
+  </section>
+</main>
+
+<footer class="footer">
+  <p>FieldCare, built by Taiwo John for #BuildHybridAI 2026. A triage aid, not a diagnosis.</p>
+</footer>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
