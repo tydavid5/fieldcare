@@ -59,8 +59,10 @@ export function liveAvailable() {
 export async function prepareOnDeviceModel(onProgress) {
   const service = getAiService();
   const model = getGenerativeModel(service, {
-    model: "gemini-3.5-flash-lite",
     mode: InferenceMode.PREFER_ON_DEVICE,
+    inCloudParams: {
+      model: "gemini-3.5-flash-lite",
+    },
   });
   model.initializeDeviceModel((val) => {
     if (typeof onProgress === "function") onProgress(val);
@@ -81,9 +83,11 @@ const TRIAGE_INSTRUCTIONS =
 export async function liveTriage(patient, onProgress) {
   const service = getAiService();
   const model = getGenerativeModel(service, {
-    model: "gemini-3.5-flash-lite",
     mode: InferenceMode.PREFER_ON_DEVICE,
-    generationConfig: { responseMimeType: "application/json" },
+    inCloudParams: {
+      model: "gemini-3.5-flash-lite",
+      generationConfig: { responseMimeType: "application/json" },
+    },
   });
   model.initializeDeviceModel((val) => {
     if (typeof onProgress === "function") onProgress(val);
@@ -117,9 +121,11 @@ const PLAN_INSTRUCTIONS =
 export async function liveCarePlan(patient, triage) {
   const service = getAiService();
   const model = getGenerativeModel(service, {
-    model: "gemini-3.5-flash-lite",
     mode: InferenceMode.PREFER_IN_CLOUD,
-    generationConfig: { responseMimeType: "application/json" },
+    inCloudParams: {
+      model: "gemini-3.5-flash-lite",
+      generationConfig: { responseMimeType: "application/json" },
+    },
   });
   const prompt =
     PLAN_INSTRUCTIONS +
