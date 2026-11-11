@@ -24,10 +24,26 @@ On-device Gemini Nano needs Chrome on Desktop version 139 or higher, with the on
 1. Create a Firebase project in the Firebase console.
 2. Go to AI Services, then AI Logic, and click Get started. Choose the Gemini Developer API as the provider.
 3. Register this web app in the Firebase console and copy its Firebase config.
-4. Paste the config into `src/config.js`, replacing the placeholder values.
+4. Set the Firebase config as environment variables in your host (see "API key and restrictions" below). The API key is never committed to this repo.
 5. Run the app and turn demo mode off in the header. Triage then runs through Firebase AI Logic with `PREFER_ON_DEVICE`, and the care plan uses `PREFER_IN_CLOUD`. Each answer shows its source, read from `response.inferenceSource`.
 
 Note: when App Check is enforced for AI Logic, local development needs the App Check debug provider. See the Firebase AI Logic docs for the steps.
+
+## API key and restrictions
+
+This section is the handover note for the Firebase API key. Read it before moving hosts, rotating the key, or handing the project to someone else.
+
+Where the key lives: the Firebase web API key is set as the `VITE_FIREBASE_API_KEY` environment variable in Vercel (Production, type Config). It is injected at build time. It is NOT in this repo and NOT in git history. The app reads it from `import.meta.env.VITE_FIREBASE_API_KEY` in `src/config.js`. The other Firebase config values (project ID, app ID, and the rest) are in `src/config.js` because they are not secrets.
+
+Current key (set Nov 11, 2026): Google Cloud Console, project `fieldcare-cbe75`, key name "API key 2", key ID `2e529878-a048-451a-849f-8cf0213bd7ff`. Restrictions: HTTP referrers allow only `https://fieldcare.vercel.app/*`, and API restrictions allow only the Firebase AI Logic API. The previous key ("Browser key (auto created by Firebase)", ID `4419d295-dec1-451f-bf4b-813cf8f8e934`) was leaked in this public repo on Nov 11, 2026 and was deleted the same day. Do not reuse it.
+
+Why the key is restricted instead of hidden: a Firebase web key is meant to be visible in client code, it is in the built JavaScript by design. Security comes from the restrictions, not from hiding it. The referrer lock means the key only works from the FieldCare site, and the API lock means it only works for Firebase AI Logic. Anyone who copies the key cannot use it from another site or for other Google APIs.
+
+Moving to a new host: the key value is just a string, it is not locked to Vercel. Copy it from Vercel (Project Settings, Environment Variables) to the new host as `VITE_FIREBASE_API_KEY`, then in Google Cloud Console, project `fieldcare-cbe75`, APIs and Services, Credentials, open the key and add the new site address to the HTTP referrers list. Remove the old address only after the new site is live and tested. The app needs no code change for a host move, only the referrer update.
+
+Rotating the key: in Google Cloud Console, project `fieldcare-cbe75`, create a new API key, set the same referrer and API restrictions on it, set its value as `VITE_FIREBASE_API_KEY` in Vercel, redeploy, verify the live site works, then delete the old key in the console. Never delete the old key before the new one is live and tested.
+
+Handing the project over: the new maintainer needs access to three things, all under the Google account `0x5ive@gmail.com` unless ownership is transferred. The Google Cloud project `fieldcare-cbe75` (to manage the key and its restrictions), the Vercel project `fieldcare` (to read or change the env var), and this GitHub repo (to update the code). Transfer ownership of all three properly; do not just share the key value, because the key alone does not let anyone update its restrictions or rotate it.
 
 ## Run it locally
 
