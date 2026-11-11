@@ -59,6 +59,7 @@ export function liveAvailable() {
 export async function prepareOnDeviceModel(onProgress) {
   const service = getAiService();
   const model = getGenerativeModel(service, {
+    model: "gemini-3.5-flash-lite",
     mode: InferenceMode.PREFER_ON_DEVICE,
   });
   model.initializeDeviceModel((val) => {
@@ -80,6 +81,7 @@ const TRIAGE_INSTRUCTIONS =
 export async function liveTriage(patient, onProgress) {
   const service = getAiService();
   const model = getGenerativeModel(service, {
+    model: "gemini-3.5-flash-lite",
     mode: InferenceMode.PREFER_ON_DEVICE,
     generationConfig: { responseMimeType: "application/json" },
   });
@@ -115,6 +117,7 @@ const PLAN_INSTRUCTIONS =
 export async function liveCarePlan(patient, triage) {
   const service = getAiService();
   const model = getGenerativeModel(service, {
+    model: "gemini-3.5-flash-lite",
     mode: InferenceMode.PREFER_IN_CLOUD,
     generationConfig: { responseMimeType: "application/json" },
   });
