@@ -21,36 +21,71 @@ const ageGroup = $("ageGroup");
 const symptoms = $("symptoms");
 const voiceBtn = $("voiceBtn");
 const voiceNote = $("voiceNote");
+const voiceChips = $("voiceChips");
 const assessBtn = $("assessBtn");
 const assessStatus = $("assessStatus");
 const triageCard = $("triageCard");
+const triageLoading = $("triageLoading");
+const triageSteps = $("triageSteps");
+const triageContent = $("triageContent");
 const triageSource = $("triageSource");
+const triageBanner = $("triageBanner");
+const bannerShape = $("bannerShape");
 const triageLevel = $("triageLevel");
 const triageMeaning = $("triageMeaning");
+const whyList = $("whyList");
 const triageSummary = $("triageSummary");
 const redFlagBox = $("redFlagBox");
 const redFlagList = $("redFlagList");
 const triageQuestions = $("triageQuestions");
 const carePlanBtn = $("carePlanBtn");
 const carePlanStatus = $("carePlanStatus");
+const reviewBtn = $("reviewBtn");
+const correctBtn = $("correctBtn");
+const reviewNote = $("reviewNote");
 const planCard = $("planCard");
+const planLoading = $("planLoading");
+const planStepsLoading = $("planStepsLoading");
+const planContent = $("planContent");
 const planSource = $("planSource");
 const planSteps = $("planSteps");
 const planDifferential = $("planDifferential");
 const planWatch = $("planWatch");
 const planReferral = $("planReferral");
 const planFollowUp = $("planFollowUp");
+const reviewBtn2 = $("reviewBtn2");
+const correctBtn2 = $("correctBtn2");
+const reviewNote2 = $("reviewNote2");
 const caseList = $("caseList");
 const caseCount = $("caseCount");
 const emptyCases = $("emptyCases");
 
 let demoMode = !liveAvailable();
 let currentCase = null;
+let voiceSymptoms = [];
+let listening = false;
+let currentRec = null;
 
+// Triage wording: colour plus shape plus word plus action, never colour alone.
 const LEVEL_MEANING = {
-  URGENT: "Urgent. Refer now. Do not wait.",
-  SOON: "Soon. Review today, within a few hours.",
-  ROUTINE: "Routine. Manage at home for now, and review if it gets worse.",
+  URGENT: "Urgent, get help now.",
+  SOON: "Soon, see a clinician today.",
+  ROUTINE: "Routine, can wait.",
+};
+
+const LEVEL_ICON = {
+  URGENT: "⚠ ",
+  SOON: "! ",
+  ROUTINE: "✓ ",
+};
+
+const BANNER_SHAPES = {
+  ROUTINE:
+    '<svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><circle cx="24" cy="24" r="23" fill="#0b6e4f"/><path d="M14 24.5l7 7 13-15" fill="none" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  SOON:
+    '<svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><path d="M24 4 L45 42 L3 42 Z" fill="#8a5a00"/><text x="24" y="36" text-anchor="middle" font-size="26" font-weight="800" fill="#ffffff">!</text></svg>',
+  URGENT:
+    '<svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><polygon points="15,3 33,3 45,15 45,33 33,45 15,45 3,33 3,15" fill="#b42318"/><text x="24" y="34" text-anchor="middle" font-size="26" font-weight="800" fill="#ffffff">!</text></svg>',
 };
 
 function el(tag, text, className) {
@@ -114,6 +149,9 @@ function refreshDemoUI() {
     demoText.textContent =
       "Live mode is on. Triage runs through Firebase AI Logic with Gemini Nano on-device when available, and the care plan uses Gemini Flash in the cloud.";
   }
+  demoNote.textContent = liveAvailable()
+    ? "Live Firebase AI Logic is configured."
+    : "Live mode is not set up on this device yet. Demo mode stays on for now.";
 }
 
 demoToggle.addEventListener("change", () => {
@@ -121,14 +159,11 @@ demoToggle.addEventListener("change", () => {
     demoToggle.checked = true;
     demoMode = true;
     demoNote.textContent =
-      "Live mode needs a real Firebase config first. Add it in src/config.js, then turn demo mode off. Demo mode stays on for now.";
+      "Live mode needs a Firebase key first. Demo mode stays on for now.";
     refreshDemoUI();
     return;
   }
   demoMode = demoToggle.checked;
-  demoNote.textContent = liveAvailable()
-    ? "Live Firebase AI Logic is configured."
-    : "To use live Firebase AI Logic, add a real Firebase config in src/config.js and turn demo mode off. See the README for the steps.";
   refreshDemoUI();
 });
 
@@ -168,12 +203,97 @@ function setPlanBadge(source, isDemo) {
   }
 }
 
-function showTriage(c, triage, sourceLabel, isDemo) {
+// Staged loading steps that tick off while the AI call runs.
+function startStagedSteps(listEl, stepMs) {
+  const items = Array.from(listEl.children);
+  items.forEach((li) => li.classList.remove("done", "active"));
+  const timers = [];
+  items.forEach((li, i) => {
+    timers.push(
+      window.setTimeout(() => {
+        li.classList.add("active");
+      }, i * stepMs)
+    );
+    if (i < items.length - 1) {
+      timers.push(
+        window.setTimeout(() => {
+          li.classList.remove("active");
+          li.classList.add("done");
+        }, (i + 1) * stepMs)
+      );
+    }
+  });
+  return () => {
+    timers.forEach((t) => window.clearTimeout(t));
+    items.forEach((li) => {
+      li.classList.remove("active");
+      li.classList.add("done");
+    });
+  };
+}
+
+// Staggered reveal: banner first, then the cards below it.
+function revealStaggered(nodes) {
+  nodes.forEach((node, i) => {
+    if (!node) return;
+    node.classList.remove("reveal");
+    void node.offsetWidth;
+    node.style.animationDelay = i * 80 + "ms";
+    node.classList.add("reveal");
+  });
+}
+
+function truncateWords(text, maxLen) {
+  if (text.length <= maxLen) return text;
+  const cut = text.slice(0, maxLen);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > 40 ? cut.slice(0, lastSpace) : cut) + "...";
+}
+
+// Why this level: plain word bullets tied to what the worker entered.
+function buildWhyBullets(patient, triage) {
+  const bullets = [];
+  const flags = triage.redFlags || [];
+  flags.slice(0, 2).forEach((flag) => {
+    bullets.push("Danger sign found: " + flag + ".");
+  });
+  if (flags.length === 0) {
+    bullets.push("No danger signs were found in what you wrote.");
+  }
+  if (patient.symptoms) {
+    bullets.push("You wrote: " + truncateWords(patient.symptoms, 90));
+  }
+  const causes = triage.possibleCauses || [];
+  if (causes.length > 0 && !/^not clear/i.test(causes[0])) {
+    bullets.push("Possible cause to check first: " + causes[0] + ".");
+  }
+  return bullets.slice(0, 3);
+}
+
+function showTriageLoading() {
   triageCard.classList.remove("hidden");
+  planCard.classList.add("hidden");
+  triageContent.classList.add("hidden");
+  triageLoading.classList.remove("hidden");
+  triageLoading.setAttribute("aria-busy", "true");
+  triageCard.scrollIntoView({ behavior: "smooth", block: "start" });
+  return startStagedSteps(triageSteps, 1200);
+}
+
+function showTriage(c, triage, sourceLabel, isDemo) {
+  triageLoading.classList.add("hidden");
+  triageLoading.setAttribute("aria-busy", "false");
+  triageContent.classList.remove("hidden");
   setTriageBadge(sourceLabel, isDemo);
+  triageBanner.className =
+    "triage-banner triage-banner-" + triage.level.toLowerCase();
+  bannerShape.innerHTML = BANNER_SHAPES[triage.level] || BANNER_SHAPES.ROUTINE;
   triageLevel.textContent = triage.level;
-  triageLevel.className = "level level-" + triage.level.toLowerCase();
   triageMeaning.textContent = LEVEL_MEANING[triage.level] || "";
+  whyList.innerHTML = "";
+  buildWhyBullets(c.patient, triage).forEach((b) => {
+    whyList.appendChild(el("li", b));
+  });
   triageSummary.textContent = triage.summary;
   redFlagList.innerHTML = "";
   if (triage.redFlags && triage.redFlags.length > 0) {
@@ -188,12 +308,33 @@ function showTriage(c, triage, sourceLabel, isDemo) {
   (triage.questions || []).forEach((q) => {
     triageQuestions.appendChild(el("li", q));
   });
+  reviewNote.textContent = "";
+  reviewBtn.disabled = false;
+  reviewBtn.textContent = "Ask a clinician to review";
   refreshCarePlanArea();
+  revealStaggered([
+    triageBanner,
+    $("whyBox"),
+    redFlagBox.classList.contains("hidden") ? null : redFlagBox,
+    triageQuestions,
+    $("carePlanArea"),
+  ]);
   triageCard.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function showPlan(c, plan, sourceLabel, isDemo) {
+function showPlanLoading() {
   planCard.classList.remove("hidden");
+  planContent.classList.add("hidden");
+  planLoading.classList.remove("hidden");
+  planLoading.setAttribute("aria-busy", "true");
+  planCard.scrollIntoView({ behavior: "smooth", block: "start" });
+  return startStagedSteps(planStepsLoading, 1400);
+}
+
+function showPlan(c, plan, sourceLabel, isDemo) {
+  planLoading.classList.add("hidden");
+  planLoading.setAttribute("aria-busy", "false");
+  planContent.classList.remove("hidden");
   setPlanBadge(sourceLabel, isDemo);
   planSteps.innerHTML = "";
   (plan.steps || []).forEach((s) => {
@@ -221,7 +362,11 @@ function showPlan(c, plan, sourceLabel, isDemo) {
   }
   planReferral.textContent = plan.referral || "";
   planFollowUp.textContent = plan.followUp || "";
+  reviewNote2.textContent = "";
+  reviewBtn2.disabled = false;
+  reviewBtn2.textContent = "Ask a clinician to review";
   refreshCarePlanArea();
+  revealStaggered([planSteps, planDifferential, planWatch]);
   planCard.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -299,25 +444,70 @@ async function runCarePlan(patient, triage) {
   };
 }
 
+// Voice transcript as editable chips: tap the cross to remove one.
+function renderVoiceChips() {
+  voiceChips.innerHTML = "";
+  voiceChips.classList.toggle("hidden", voiceSymptoms.length === 0);
+  voiceSymptoms.forEach((text, idx) => {
+    const chip = el("span", "", "symptom-chip");
+    chip.appendChild(document.createTextNode(text));
+    const remove = el("button", "×", "");
+    remove.type = "button";
+    remove.setAttribute("aria-label", "Remove " + text);
+    remove.addEventListener("click", () => {
+      voiceSymptoms.splice(idx, 1);
+      renderVoiceChips();
+    });
+    chip.appendChild(remove);
+    voiceChips.appendChild(chip);
+  });
+}
+
+function addVoiceTranscript(said) {
+  const parts = said
+    .split(/[,;]|\band\b/i)
+    .map((p) => p.trim().replace(/^[a-z]/, (c) => c))
+    .filter((p) => p.length > 1);
+  parts.forEach((p) => {
+    const lower = p.toLowerCase();
+    const exists =
+      voiceSymptoms.some((s) => s.toLowerCase() === lower) ||
+      symptoms.value.toLowerCase().includes(lower);
+    if (!exists) voiceSymptoms.push(p);
+  });
+  renderVoiceChips();
+  if (voiceSymptoms.length > 0) {
+    voiceNote.textContent =
+      "Check the symptoms above. Tap the cross to remove one, then tap Check on device.";
+  }
+}
+
 caseForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const text = symptoms.value.trim();
+  const typed = symptoms.value.trim();
+  const parts = [];
+  if (typed) parts.push(typed);
+  voiceSymptoms.forEach((s) => parts.push(s));
+  const text = parts.join(", ");
   if (!text) {
     assessStatus.textContent = "Describe the symptoms first, or load a sample case.";
     symptoms.focus();
     return;
   }
+  symptoms.value = text;
+  voiceSymptoms = [];
+  renderVoiceChips();
   const patient = {
     label: patientLabel.value.trim() || "Patient",
     ageGroup: ageGroup.value,
     symptoms: text,
   };
   assessBtn.disabled = true;
-  assessStatus.textContent = demoMode
-    ? "Checking on device (demo simulation)..."
-    : "Checking on device with Firebase AI Logic...";
+  assessStatus.textContent = "";
+  const finishSteps = showTriageLoading();
   try {
     const out = await runTriage(patient);
+    finishSteps();
     const c = {
       id: newCaseId(),
       createdAt: new Date().toISOString(),
@@ -332,6 +522,8 @@ caseForm.addEventListener("submit", async (event) => {
     showTriage(c, out.triage, out.source, out.isDemo);
     assessStatus.textContent = "";
   } catch (err) {
+    finishSteps();
+    triageLoading.classList.add("hidden");
     assessStatus.textContent =
       "The on-device check failed: " + err.message + " Try again, or switch demo mode on.";
   } finally {
@@ -348,11 +540,11 @@ carePlanBtn.addEventListener("click", async () => {
     return;
   }
   carePlanBtn.disabled = true;
-  carePlanStatus.textContent = demoMode
-    ? "Getting the care plan from the cloud (demo simulation)..."
-    : "Getting the care plan from the cloud with Firebase AI Logic...";
+  carePlanStatus.textContent = "";
+  const finishSteps = showPlanLoading();
   try {
     const out = await runCarePlan(currentCase.patient, currentCase.triage);
+    finishSteps();
     const plan = Object.assign({}, out.plan, { status: "ready" });
     currentCase.carePlan = plan;
     currentCase.planSource = out.source;
@@ -361,10 +553,36 @@ carePlanBtn.addEventListener("click", async () => {
     showPlan(currentCase, plan, out.source, out.isDemo);
     carePlanStatus.textContent = "";
   } catch (err) {
+    finishSteps();
+    planLoading.classList.add("hidden");
     carePlanStatus.textContent = "The care plan failed: " + err.message + " Try again.";
     carePlanBtn.disabled = false;
   }
 });
+
+function markForReview(noteEl, btnEl) {
+  if (!currentCase) return;
+  currentCase.flaggedForReview = true;
+  upsertCase(currentCase);
+  noteEl.textContent =
+    "Marked for clinician review. Show this case to a clinician when you see them.";
+  btnEl.disabled = true;
+  btnEl.textContent = "Marked for clinician review";
+}
+
+function correctCase() {
+  triageCard.classList.add("hidden");
+  planCard.classList.add("hidden");
+  assessStatus.textContent =
+    "Edit the symptoms above, then tap Check on device again.";
+  symptoms.scrollIntoView({ behavior: "smooth", block: "center" });
+  symptoms.focus();
+}
+
+reviewBtn.addEventListener("click", () => markForReview(reviewNote, reviewBtn));
+reviewBtn2.addEventListener("click", () => markForReview(reviewNote2, reviewBtn2));
+correctBtn.addEventListener("click", correctCase);
+correctBtn2.addEventListener("click", correctCase);
 
 function renderCaseList() {
   const cases = loadCases();
@@ -375,7 +593,11 @@ function renderCaseList() {
     const card = el("div", "", "case-item");
     const head = el("div", "", "case-head");
     head.appendChild(el("strong", c.patient.label));
-    const chip = el("span", c.triage.level, "chip chip-" + c.triage.level.toLowerCase());
+    const chip = el(
+      "span",
+      (LEVEL_ICON[c.triage.level] || "") + c.triage.level,
+      "chip chip-" + c.triage.level.toLowerCase()
+    );
     head.appendChild(chip);
     card.appendChild(head);
     card.appendChild(el("p", c.patient.ageGroup + " " + c.triage.summary, "case-summary"));
@@ -384,7 +606,8 @@ function renderCaseList() {
       : c.carePlan && c.carePlan.status === "queued"
         ? "Care plan queued, waiting for signal"
         : "On-device triage only";
-    card.appendChild(el("p", statusText, "fine"));
+    const statusLine = statusText + (c.flaggedForReview ? ". Marked for clinician review" : "");
+    card.appendChild(el("p", statusLine, "fine"));
     const actions = el("div", "", "row");
     const viewBtn = el("button", "View", "btn btn-ghost btn-small");
     viewBtn.type = "button";
@@ -393,6 +616,8 @@ function renderCaseList() {
       patientLabel.value = c.patient.label === "Patient" ? "" : c.patient.label;
       ageGroup.value = c.patient.ageGroup;
       symptoms.value = c.patient.symptoms;
+      voiceSymptoms = [];
+      renderVoiceChips();
       showTriage(c, c.triage, c.triageSource, c.triageDemo);
       if (c.carePlan && c.carePlan.status === "ready") {
         showPlan(c, c.carePlan, c.planSource, c.planDemo);
@@ -428,13 +653,25 @@ function renderCaseList() {
   });
 }
 
-document.querySelectorAll(".chip-btn").forEach((btn) => {
+document.querySelectorAll(".chip-btn[data-sample]").forEach((btn) => {
   btn.addEventListener("click", () => {
     const sample = SAMPLE_CASES[btn.dataset.sample];
     if (!sample) return;
     patientLabel.value = sample.label;
     ageGroup.value = sample.ageGroup;
     symptoms.value = sample.symptoms;
+    voiceSymptoms = [];
+    renderVoiceChips();
+    symptoms.focus();
+  });
+});
+
+document.querySelectorAll(".chip-btn[data-symptom]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const word = btn.dataset.symptom;
+    const current = symptoms.value.trim();
+    if (current.toLowerCase().includes(word.toLowerCase())) return;
+    symptoms.value = current ? current + ", " + word : word;
     symptoms.focus();
   });
 });
@@ -445,30 +682,42 @@ if (!SpeechRecognition) {
   voiceNote.textContent = "Voice input is not supported in this browser. Type the symptoms instead.";
 } else {
   voiceBtn.addEventListener("click", () => {
+    if (listening && currentRec) {
+      currentRec.stop();
+      return;
+    }
     const rec = new SpeechRecognition();
     rec.lang = "en-NG";
     rec.interimResults = false;
     rec.maxAlternatives = 1;
-    voiceBtn.disabled = true;
-    voiceBtn.textContent = "Listening...";
+    currentRec = rec;
+    listening = true;
+    voiceBtn.classList.add("listening");
+    voiceBtn.querySelector("span").textContent = "Listening, tap to stop";
     voiceNote.textContent = "Speak now. Tap the button again to stop.";
     rec.onresult = (event) => {
       const said = event.results[0][0].transcript;
-      symptoms.value = symptoms.value ? symptoms.value + " " + said : said;
+      addVoiceTranscript(said);
     };
     rec.onerror = () => {
       voiceNote.textContent = "Voice input did not work. Type the symptoms instead.";
     };
     rec.onend = () => {
-      voiceBtn.disabled = false;
-      voiceBtn.textContent = "Speak symptoms";
-      voiceNote.textContent = "";
+      listening = false;
+      currentRec = null;
+      voiceBtn.classList.remove("listening");
+      voiceBtn.querySelector("span").textContent = "Speak symptoms";
+      if (!voiceNote.textContent || voiceNote.textContent === "Speak now. Tap the button again to stop.") {
+        voiceNote.textContent = "";
+      }
     };
     try {
       rec.start();
     } catch (err) {
-      voiceBtn.disabled = false;
-      voiceBtn.textContent = "Speak symptoms";
+      listening = false;
+      currentRec = null;
+      voiceBtn.classList.remove("listening");
+      voiceBtn.querySelector("span").textContent = "Speak symptoms";
       voiceNote.textContent = "Voice input did not start. Type the symptoms instead.";
     }
   });

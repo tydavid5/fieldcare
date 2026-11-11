@@ -29,17 +29,7 @@
     <p>FieldCare is a triage aid, not a diagnosis. It helps a health worker decide how quickly a patient needs care. The health worker makes the final call. If a patient has a danger sign, refer them at once.</p>
   </section>
 
-  <section class="card" id="demoCard">
-    <h2>Demo mode</h2>
-    <p id="demoText">Demo mode is on. The triage and care plan answers are simulated with realistic examples, so you can try the full flow without a live AI connection. The on-device and cloud steps are labelled, so you can see where each answer would come from.</p>
-    <label class="switch-row">
-      <input type="checkbox" id="demoToggle" checked>
-      <span>Demo mode on</span>
-    </label>
-    <p class="fine" id="demoNote">To use live Firebase AI Logic, add a real Firebase config in src/config.js and turn demo mode off. See the README for the steps.</p>
-  </section>
-
-  <section class="card">
+  <section class="card" id="caseCard">
     <h2>New case</h2>
     <form id="caseForm">
       <label class="field">
@@ -55,13 +45,29 @@
           <option value="50 years or older">50 years or older</option>
         </select>
       </label>
-      <label class="field">
-        <span>Symptoms</span>
+      <div class="field">
+        <span class="field-label">Symptoms</span>
+        <button type="button" id="voiceBtn" class="btn btn-mic">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor"/><path d="M5 10v1a7 7 0 0 0 14 0v-1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 18v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span>Speak symptoms</span>
+        </button>
+        <p id="voiceNote" class="fine"></p>
+        <div id="voiceChips" class="chip-row hidden" aria-label="Symptoms from voice. Tap the cross to remove one."></div>
         <textarea id="symptoms" rows="4" placeholder="Describe the symptoms in plain words. Example: fever for 3 days, chills, headache, vomiting."></textarea>
-      </label>
-      <div class="row">
-        <button type="button" id="voiceBtn" class="btn btn-ghost">Speak symptoms</button>
-        <span id="voiceNote" class="fine"></span>
+        <p class="privacy-line">Stored on this phone, shared only with your clinic.</p>
+        <div class="quick-add">
+          <span class="fine">Tap to add a symptom:</span>
+          <div class="chip-row" id="quickChips">
+            <button type="button" class="chip-btn" data-symptom="fever">Fever</button>
+            <button type="button" class="chip-btn" data-symptom="cough">Cough</button>
+            <button type="button" class="chip-btn" data-symptom="diarrhoea">Diarrhoea</button>
+            <button type="button" class="chip-btn" data-symptom="headache">Headache</button>
+            <button type="button" class="chip-btn" data-symptom="chest pain">Chest pain</button>
+            <button type="button" class="chip-btn" data-symptom="breathing difficulty">Breathing difficulty</button>
+            <button type="button" class="chip-btn" data-symptom="vomiting">Vomiting</button>
+            <button type="button" class="chip-btn" data-symptom="rash">Rash</button>
+          </div>
+        </div>
       </div>
       <div class="samples">
         <span class="fine">Try a sample case:</span>
@@ -70,44 +76,103 @@
         <button type="button" class="chip-btn" data-sample="dehydration">Diarrhoea, toddler</button>
         <button type="button" class="chip-btn" data-sample="pregnancy">Headache and swelling, pregnant</button>
       </div>
-      <button type="submit" id="assessBtn" class="btn btn-primary btn-big">Check on device</button>
+      <button type="submit" id="assessBtn" class="btn btn-primary btn-big sticky-action">Check on device</button>
       <p class="fine" id="assessStatus"></p>
     </form>
   </section>
 
-  <section class="card hidden" id="triageCard" aria-live="polite">
-    <div class="card-head">
-      <h2>Triage result</h2>
-      <span id="triageSource" class="badge badge-device">On-device</span>
+  <section class="card" id="demoCard">
+    <h2>Demo mode</h2>
+    <p id="demoText">Demo mode is on. The triage and care plan answers are simulated with realistic examples, so you can try the full flow without a live AI connection. The on-device and cloud steps are labelled, so you can see where each answer would come from.</p>
+    <label class="switch-row">
+      <input type="checkbox" id="demoToggle" checked>
+      <span>Demo mode on</span>
+    </label>
+    <p class="fine" id="demoNote">Live Firebase AI Logic is configured.</p>
+  </section>
+
+  <section class="card hidden" id="triageCard">
+    <div id="triageLoading" class="hidden" aria-live="polite" aria-busy="true">
+      <ol class="load-steps" id="triageSteps">
+        <li>Checking danger signs</li>
+        <li>Matching symptoms</li>
+        <li>Writing the triage result</li>
+      </ol>
+      <div class="skel skel-banner"></div>
+      <div class="skel skel-line"></div>
+      <div class="skel skel-line"></div>
+      <div class="skel skel-line short"></div>
+      <div class="skel skel-card"></div>
+      <div class="skel skel-card"></div>
     </div>
-    <p class="level" id="triageLevel">ROUTINE</p>
-    <p id="triageMeaning" class="meaning"></p>
-    <p id="triageSummary"></p>
-    <div id="redFlagBox" class="redflag hidden">
-      <strong>Danger signs found. Refer at once.</strong>
-      <ul id="redFlagList"></ul>
-    </div>
-    <h3>Ask the patient</h3>
-    <ol id="triageQuestions" class="q-list"></ol>
-    <div id="carePlanArea">
-      <button type="button" id="carePlanBtn" class="btn btn-primary btn-big">Get care plan from the cloud</button>
-      <p class="fine" id="carePlanStatus"></p>
+    <div id="triageContent" class="hidden">
+      <div class="card-head">
+        <h2>Triage result</h2>
+        <span id="triageSource" class="badge badge-device">On-device</span>
+      </div>
+      <div id="triageBanner" class="triage-banner triage-banner-routine">
+        <span id="bannerShape" class="banner-shape" aria-hidden="true"></span>
+        <div class="banner-text">
+          <p class="level" id="triageLevel">ROUTINE</p>
+          <p id="triageMeaning" class="meaning"></p>
+        </div>
+      </div>
+      <div id="whyBox" class="why-box">
+        <h3>Why this level</h3>
+        <ul id="whyList" class="plain-list"></ul>
+      </div>
+      <p id="triageSummary"></p>
+      <div id="redFlagBox" class="redflag hidden">
+        <strong>Danger signs found. Refer at once.</strong>
+        <ul id="redFlagList"></ul>
+      </div>
+      <h3>Ask the patient</h3>
+      <ol id="triageQuestions" class="q-list"></ol>
+      <div id="carePlanArea">
+        <button type="button" id="carePlanBtn" class="btn btn-primary btn-big sticky-action">Get care plan from the cloud</button>
+        <p class="fine" id="carePlanStatus"></p>
+      </div>
+      <p class="guide-line">This is a guide, not a diagnosis. A clinician should check this patient.</p>
+      <div class="row action-row">
+        <button type="button" id="reviewBtn" class="btn btn-ghost">Ask a clinician to review</button>
+        <button type="button" id="correctBtn" class="btn btn-ghost">This looks wrong, correct it</button>
+      </div>
+      <p class="fine" id="reviewNote"></p>
     </div>
   </section>
 
-  <section class="card hidden" id="planCard" aria-live="polite">
-    <div class="card-head">
-      <h2>Care plan</h2>
-      <span id="planSource" class="badge badge-cloud">Cloud</span>
+  <section class="card hidden" id="planCard">
+    <div id="planLoading" class="hidden" aria-live="polite" aria-busy="true">
+      <ol class="load-steps" id="planStepsLoading">
+        <li>Reading the triage result</li>
+        <li>Building your care plan</li>
+      </ol>
+      <div class="skel skel-line"></div>
+      <div class="skel skel-line"></div>
+      <div class="skel skel-line short"></div>
+      <div class="skel skel-card"></div>
+      <div class="skel skel-card"></div>
     </div>
-    <h3>What to do now</h3>
-    <ol id="planSteps" class="q-list"></ol>
-    <h3>Possible causes</h3>
-    <ul id="planDifferential" class="plain-list"></ul>
-    <h3>Watch for these danger signs</h3>
-    <ul id="planWatch" class="plain-list"></ul>
-    <p id="planReferral"></p>
-    <p id="planFollowUp" class="fine"></p>
+    <div id="planContent" class="hidden">
+      <div class="card-head">
+        <h2>Care plan</h2>
+        <span id="planSource" class="badge badge-cloud">Cloud</span>
+      </div>
+      <h3>What to do now</h3>
+      <ol id="planSteps" class="q-list"></ol>
+      <h3>Possible causes</h3>
+      <ul id="planDifferential" class="plain-list"></ul>
+      <h3>Watch for these danger signs</h3>
+      <ul id="planWatch" class="plain-list"></ul>
+      <p id="planReferral"></p>
+      <p id="planFollowUp" class="fine"></p>
+      <p class="guide-line">This is a guide, not a diagnosis. A clinician should check this patient.</p>
+      <div class="row action-row">
+        <button type="button" id="reviewBtn2" class="btn btn-ghost">Ask a clinician to review</button>
+        <button type="button" id="correctBtn2" class="btn btn-ghost">This looks wrong, correct it</button>
+      </div>
+      <p class="fine" id="reviewNote2"></p>
+    </div>
   </section>
 
   <section class="card">
