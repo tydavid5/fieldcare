@@ -10,12 +10,12 @@
 // See the README for the full checklist.
 
 export const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
+  apiKey: "AIzaSyAgY2P7f3vJeZ83Jur4wXZ7OdgYWdSGEX0",
+  authDomain: "fieldcare-cbe75.firebaseapp.com",
+  projectId: "fieldcare-cbe75",
+  storageBucket: "fieldcare-cbe75.firebasestorage.app",
+  messagingSenderId: "845721543399",
+  appId: "1:845721543399:web:bc00b75b4ce8a21e973842",
 };
 
 export function isConfigured() {
