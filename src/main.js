@@ -258,7 +258,13 @@ function buildWhyBullets(patient, triage) {
     bullets.push("Danger sign found: " + flag + ".");
   });
   if (flags.length === 0) {
-    bullets.push("No danger signs were found in what you wrote.");
+    if (triage.level === "URGENT") {
+      bullets.push("The symptoms you described need urgent attention.");
+    } else if (triage.level === "SOON") {
+      bullets.push("The symptoms you described need a clinician today.");
+    } else {
+      bullets.push("No danger signs were found in what you wrote.");
+    }
   }
   if (patient.symptoms) {
     bullets.push("You wrote: " + truncateWords(patient.symptoms, 90));
