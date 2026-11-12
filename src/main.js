@@ -36,6 +36,7 @@ const triageLevel = $("triageLevel");
 const triageMeaning = $("triageMeaning");
 const whyList = $("whyList");
 const triageSummary = $("triageSummary");
+const triageReceipt = $("triageReceipt");
 const redFlagBox = $("redFlagBox");
 const redFlagList = $("redFlagList");
 const triageQuestions = $("triageQuestions");
@@ -75,10 +76,13 @@ let currentCancelPlan = null;
 let correctedCaseId = null;
 
 // Triage wording: colour plus shape plus word plus action, never colour alone.
+// Triage wording: colour plus shape plus word plus action, never colour alone.
+// The action words get the highlighter, in the severity tint, so colour
+// still means status.
 const LEVEL_MEANING = {
-  URGENT: "Urgent, get help now.",
-  SOON: "Soon, see a clinician today.",
-  ROUTINE: "Routine, can wait.",
+  URGENT: { text: "Urgent, ", action: "get help now." },
+  SOON: { text: "Soon, ", action: "see a clinician today." },
+  ROUTINE: { text: "Routine, ", action: "can wait." },
 };
 
 const LEVEL_ICON = {
@@ -418,7 +422,27 @@ function showTriage(c, triage, sourceLabel, isDemo) {
     "triage-banner triage-banner-" + triage.level.toLowerCase();
   bannerShape.innerHTML = BANNER_SHAPES[triage.level] || BANNER_SHAPES.ROUTINE;
   triageLevel.textContent = triage.level;
-  triageMeaning.textContent = LEVEL_MEANING[triage.level] || "";
+  const meaning = LEVEL_MEANING[triage.level];
+  triageMeaning.innerHTML = "";
+  if (meaning) {
+    triageMeaning.appendChild(document.createTextNode(meaning.text));
+    triageMeaning.appendChild(
+      el("span", meaning.action, "hl hl-" + triage.level.toLowerCase())
+    );
+  }
+  const savedAt = c.createdAt ? new Date(c.createdAt) : null;
+  triageReceipt.textContent =
+    "Saved on this device" +
+    (savedAt && !Number.isNaN(savedAt.getTime())
+      ? ", " +
+        savedAt.toLocaleString("en-NG", {
+          day: "numeric",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "") +
+    ".";
   whyList.innerHTML = "";
   buildWhyBullets(c.patient, triage).forEach((b) => {
     whyList.appendChild(el("li", b));

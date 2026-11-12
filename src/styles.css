@@ -616,6 +616,34 @@ details.card summary {
   font-size: 13px;
 }
 
+/* BackNext lesson: small caps tracked labels as the wayfinding system. */
+.eyebrow {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.outcome-line {
+  margin: 0 0 var(--space-3);
+  font-size: 15px;
+  color: var(--text-soft);
+}
+
+/* BackNext lesson: the highlighter, not a new colour, for emphasis.
+   The swipe uses the severity tint, so colour still means status. */
+.hl {
+  padding: 0 4px;
+  border-radius: 4px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.hl-routine { background: #bfe6d2; }
+.hl-soon { background: #fbe3ae; }
+.hl-urgent { background: #fbd5d1; }
+
 @media (max-width: 380px) {
   .brand h1 { font-size: 19px; }
   .tagline { font-size: 12px; }

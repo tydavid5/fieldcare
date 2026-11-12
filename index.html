@@ -36,7 +36,9 @@
   </section>
 
   <section class="card" id="caseCard">
+    <p class="eyebrow">Step 1 of 3, new case</p>
     <h2>New case</h2>
+    <p class="outcome-line">Describe the symptoms, get a clear next step: rest, see a clinician today, or refer at once.</p>
     <form id="caseForm">
       <label class="field">
         <span>Patient label or code (optional)</span>
@@ -113,6 +115,7 @@
       <div class="skel skel-card"></div>
     </div>
     <div id="triageContent" class="hidden">
+      <p class="eyebrow">Step 2 of 3, your result</p>
       <div class="card-head">
         <h2>Triage result</h2>
         <span id="triageSource" class="badge badge-device">On-device</span>
@@ -129,6 +132,7 @@
         <ul id="whyList" class="plain-list"></ul>
       </div>
       <p id="triageSummary"></p>
+      <p id="triageReceipt" class="fine"></p>
       <div id="redFlagBox" class="redflag hidden">
         <strong>Danger signs found. Refer at once.</strong>
         <ul id="redFlagList"></ul>
@@ -162,6 +166,7 @@
       <div class="skel skel-card"></div>
     </div>
     <div id="planContent" class="hidden">
+      <p class="eyebrow">Step 3 of 3, your care plan</p>
       <div class="card-head">
         <h2>Care plan</h2>
         <span id="planSource" class="badge badge-cloud">Cloud</span>
@@ -184,6 +189,7 @@
   </section>
 
   <section class="card">
+    <p class="eyebrow">Saved on this device</p>
     <div class="card-head">
       <h2>Saved cases</h2>
       <span id="caseCount" class="pill pill-soft">0 cases</span>
