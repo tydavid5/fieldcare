@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b6e4f">
 <meta name="description" content="FieldCare is an offline triage assistant for community health workers in rural Nigeria. It works without signal and gets smarter when it finds signal.">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <title>FieldCare, offline triage for community health workers</title>
 <link rel="stylesheet" href="/src/styles.css">
 </head>
@@ -33,8 +39,8 @@
     <h2>New case</h2>
     <form id="caseForm">
       <label class="field">
-        <span>Patient label (optional)</span>
-        <input type="text" id="patientLabel" placeholder="e.g. Patient A, or a first name" autocomplete="off">
+        <span>Patient label or code (optional)</span>
+        <input type="text" id="patientLabel" maxlength="40" placeholder="e.g. Patient A, or a code like A12. Use a code, not a name, when you can." autocomplete="off">
       </label>
       <label class="field">
         <span>Age group</span>
@@ -53,8 +59,8 @@
         </button>
         <p id="voiceNote" class="fine"></p>
         <div id="voiceChips" class="chip-row hidden" aria-label="Symptoms from voice. Tap the cross to remove one."></div>
-        <textarea id="symptoms" rows="4" placeholder="Describe the symptoms in plain words. Example: fever for 3 days, chills, headache, vomiting."></textarea>
-        <p class="privacy-line">Stored on this phone, shared only with your clinic.</p>
+        <textarea id="symptoms" rows="4" maxlength="500" placeholder="Describe the symptoms in plain words. Example: fever for 3 days, chills, headache, vomiting."></textarea>
+        <p class="privacy-line">In demo and offline mode, cases stay on this phone. In live mode, symptoms are sent to the AI service to get the triage and care plan.</p>
         <div class="quick-add">
           <span class="fine">Tap to add a symptom:</span>
           <div class="chip-row" id="quickChips">
@@ -98,6 +104,7 @@
         <li>Matching symptoms</li>
         <li>Writing the triage result</li>
       </ol>
+      <button type="button" id="triageCancelBtn" class="btn btn-ghost btn-small">Cancel</button>
       <div class="skel skel-banner"></div>
       <div class="skel skel-line"></div>
       <div class="skel skel-line"></div>
@@ -147,6 +154,7 @@
         <li>Reading the triage result</li>
         <li>Building your care plan</li>
       </ol>
+      <button type="button" id="planCancelBtn" class="btn btn-ghost btn-small">Cancel</button>
       <div class="skel skel-line"></div>
       <div class="skel skel-line"></div>
       <div class="skel skel-line short"></div>
@@ -180,7 +188,10 @@
       <h2>Saved cases</h2>
       <span id="caseCount" class="pill pill-soft">0 cases</span>
     </div>
-    <p class="fine">Cases are saved on this device. When you are offline, new cases wait in the queue and the care plan is added when you are back online.</p>
+    <div class="row">
+      <button type="button" id="deleteAllBtn" class="btn btn-ghost btn-small">Delete all cases</button>
+    </div>
+    <p class="fine">Cases are saved on this device. When you are offline, new cases wait in the queue and the care plan is added when you are back online. Cases older than 30 days are removed automatically.</p>
     <div id="caseList" class="case-list"></div>
     <p id="emptyCases" class="fine">No cases yet. Assess a patient to save the first case.</p>
   </section>

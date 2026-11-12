@@ -49,6 +49,21 @@ function sourceOf(response) {
   return "UNKNOWN";
 }
 
+// Race a call against a timeout. The Firebase AI SDK has no abort signal,
+// so a timed out call keeps running in the background, but the UI moves on
+// and the late answer is ignored by the caller.
+function withTimeout(promise, ms) {
+  let timer = null;
+  const timeout = new Promise((resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error("The AI answer took too long"));
+    }, ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 export function liveAvailable() {
   return isConfigured();
 }
@@ -100,7 +115,7 @@ export async function liveTriage(patient, onProgress) {
     patient.ageGroup +
     ". Symptoms: " +
     patient.symptoms;
-  const result = await model.generateContent(prompt);
+  const result = await withTimeout(model.generateContent(prompt), 30000);
   const response = result.response;
   const text = response.text();
   const data = parseJson(text);
@@ -139,7 +154,7 @@ export async function liveCarePlan(patient, triage) {
     triage.level +
     ". Triage summary: " +
     triage.summary;
-  const result = await model.generateContent(prompt);
+  const result = await withTimeout(model.generateContent(prompt), 45000);
   const response = result.response;
   const text = response.text();
   const data = parseJson(text);

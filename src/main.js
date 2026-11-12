@@ -27,6 +27,7 @@ const assessStatus = $("assessStatus");
 const triageCard = $("triageCard");
 const triageLoading = $("triageLoading");
 const triageSteps = $("triageSteps");
+const triageCancelBtn = $("triageCancelBtn");
 const triageContent = $("triageContent");
 const triageSource = $("triageSource");
 const triageBanner = $("triageBanner");
@@ -46,6 +47,7 @@ const reviewNote = $("reviewNote");
 const planCard = $("planCard");
 const planLoading = $("planLoading");
 const planStepsLoading = $("planStepsLoading");
+const planCancelBtn = $("planCancelBtn");
 const planContent = $("planContent");
 const planSource = $("planSource");
 const planSteps = $("planSteps");
@@ -59,12 +61,18 @@ const reviewNote2 = $("reviewNote2");
 const caseList = $("caseList");
 const caseCount = $("caseCount");
 const emptyCases = $("emptyCases");
+const deleteAllBtn = $("deleteAllBtn");
+
+const CASE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 let demoMode = !liveAvailable();
 let currentCase = null;
 let voiceSymptoms = [];
 let listening = false;
 let currentRec = null;
+let currentCancelTriage = null;
+let currentCancelPlan = null;
+let correctedCaseId = null;
 
 // Triage wording: colour plus shape plus word plus action, never colour alone.
 const LEVEL_MEANING = {
@@ -99,14 +107,32 @@ function loadCases() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    const now = Date.now();
+    const fresh = parsed.filter((c) => {
+      const t = Date.parse(c.createdAt || "");
+      return Number.isNaN(t) || now - t < CASE_TTL_MS;
+    });
+    if (fresh.length !== parsed.length) {
+      try {
+        localStorage.setItem(STORE_KEY, JSON.stringify(fresh));
+      } catch (err) {
+        // Pruning failed, the stale cases stay until the next load.
+      }
+    }
+    return fresh;
   } catch (err) {
     return [];
   }
 }
 
 function saveCases(cases) {
-  localStorage.setItem(STORE_KEY, JSON.stringify(cases));
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(cases));
+    return true;
+  } catch (err) {
+    return false;
+  }
 }
 
 function upsertCase(updated) {
@@ -117,8 +143,9 @@ function upsertCase(updated) {
   } else {
     cases.unshift(updated);
   }
-  saveCases(cases);
+  const saved = saveCases(cases);
   renderCaseList();
+  return saved;
 }
 
 function isOnline() {
@@ -173,6 +200,11 @@ function setTriageBadge(source, isDemo) {
     triageSource.className = "badge badge-demo";
     return;
   }
+  if (source === "FALLBACK") {
+    triageSource.textContent = "On-device rules (fallback)";
+    triageSource.className = "badge badge-fallback";
+    return;
+  }
   if (source === "ON_DEVICE") {
     triageSource.textContent = "On-device";
     triageSource.className = "badge badge-device";
@@ -189,6 +221,11 @@ function setPlanBadge(source, isDemo) {
   if (isDemo) {
     planSource.textContent = "Demo, cloud (simulated)";
     planSource.className = "badge badge-demo";
+    return;
+  }
+  if (source === "FALLBACK") {
+    planSource.textContent = "On-device rules (fallback)";
+    planSource.className = "badge badge-fallback";
     return;
   }
   if (source === "IN_CLOUD") {
@@ -248,6 +285,92 @@ function truncateWords(text, maxLen) {
   const cut = text.slice(0, maxLen);
   const lastSpace = cut.lastIndexOf(" ");
   return (lastSpace > 40 ? cut.slice(0, lastSpace) : cut) + "...";
+}
+
+// Model output is never trusted as-is. Level is forced to a known value,
+// defaulting to SOON when unknown, because under-triage is the dangerous
+// direction. Text fields get a safe fallback, list fields become arrays.
+const TRIAGE_LEVELS = ["ROUTINE", "SOON", "URGENT"];
+
+function asStringArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v) => typeof v === "string" && v.trim().length > 0);
+}
+
+function validateTriage(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const level = TRIAGE_LEVELS.includes(data.level) ? data.level : "SOON";
+  const summary =
+    typeof data.summary === "string" && data.summary.trim()
+      ? data.summary.trim()
+      : "Triage result received. Ask the questions below and use your judgement.";
+  return {
+    level,
+    summary,
+    questions: asStringArray(data.questions).slice(0, 3),
+    redFlags: asStringArray(data.redFlags),
+    possibleCauses: asStringArray(data.possibleCauses).slice(0, 3),
+  };
+}
+
+function validatePlan(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const steps = asStringArray(data.steps);
+  if (steps.length === 0) return null;
+  const differential = Array.isArray(data.differential)
+    ? data.differential
+        .filter((d) => d && (typeof d === "string" || typeof d.name === "string"))
+        .slice(0, 3)
+    : [];
+  return {
+    steps,
+    differential,
+    watchFor: asStringArray(data.watchFor),
+    referral:
+      typeof data.referral === "string" && data.referral.trim()
+        ? data.referral.trim()
+        : "Refer if any danger sign appears.",
+    followUp:
+      typeof data.followUp === "string" && data.followUp.trim()
+        ? data.followUp.trim()
+        : "Review in 2 days, or sooner if new symptoms appear.",
+  };
+}
+
+function isTimeoutError(err) {
+  return err && typeof err.message === "string" && /took too long/i.test(err.message);
+}
+
+function isForbiddenError(err) {
+  return (
+    err &&
+    typeof err.message === "string" &&
+    /403|PERMISSION_DENIED|API key not valid|blocked/i.test(err.message)
+  );
+}
+
+// One plain message for a failed AI call, so the worker always knows what
+// happened and what to do next.
+function friendlyAiError(err, what) {
+  if (!err || err.message === "cancelled") {
+    return "Cancelled. You can try again when ready.";
+  }
+  if (err.message === "offline") {
+    return "You are offline. This case is saved on the device, and the care plan will be added when you are back online.";
+  }
+  if (isTimeoutError(err)) {
+    return "This is taking too long, try again.";
+  }
+  if (isForbiddenError(err)) {
+    return "Live AI is not available from this address. Try demo mode, or check the API key allowlist.";
+  }
+  return (
+    "The " +
+    what +
+    " failed: " +
+    (err.message || "unknown error") +
+    " Try again, or switch demo mode on."
+  );
 }
 
 // Why this level: plain word bullets tied to what the worker entered.
@@ -386,9 +509,15 @@ function refreshCarePlanArea() {
   }
   carePlanBtn.classList.remove("hidden");
   if (!isOnline()) {
-    carePlanBtn.disabled = true;
-    carePlanStatus.textContent =
-      "You are offline. This case is saved on the device, and the care plan will be added when you are back online.";
+    if (demoMode) {
+      carePlanBtn.disabled = false;
+      carePlanStatus.textContent =
+        "You are offline. The demo care plan works offline, tap the button to add it.";
+    } else {
+      carePlanBtn.disabled = true;
+      carePlanStatus.textContent =
+        "You are offline. This case is saved on the device, and the care plan will be added when you are back online.";
+    }
   } else {
     carePlanBtn.disabled = false;
     if (plan && plan.status === "queued") {
@@ -397,6 +526,74 @@ function refreshCarePlanArea() {
       carePlanStatus.textContent = "";
     }
   }
+}
+
+// Fetch and save the care plan for one case. When show is true the plan is
+// displayed on screen, otherwise it is saved quietly in the background.
+// Returns true when a ready plan was saved.
+async function fetchCarePlanForCase(c, show) {
+  if (!isOnline() && !demoMode) {
+    c.carePlan = { status: "queued" };
+    upsertCase(c);
+    refreshCarePlanArea();
+    return false;
+  }
+  let finishSteps = null;
+  if (show) {
+    carePlanBtn.disabled = true;
+    carePlanStatus.textContent = "";
+    finishSteps = showPlanLoading();
+  }
+  let cancelFn = null;
+  const cancelPromise = new Promise((resolve, reject) => {
+    cancelFn = () => reject(new Error("cancelled"));
+  });
+  if (show) currentCancelPlan = cancelFn;
+  try {
+    const work = runCarePlan(c.patient, c.triage);
+    const out = show ? await Promise.race([work, cancelPromise]) : await work;
+    if (finishSteps) finishSteps();
+    const plan = Object.assign({}, out.plan, { status: "ready" });
+    c.carePlan = plan;
+    c.planSource = out.source;
+    c.planDemo = out.isDemo;
+    const saved = upsertCase(c);
+    if (show) {
+      showPlan(c, plan, out.source, out.isDemo);
+      carePlanStatus.textContent = "";
+      if (!saved) {
+        carePlanStatus.textContent =
+          "Could not save this case on the device, storage may be full. The care plan above is still shown.";
+      }
+    }
+    return true;
+  } catch (err) {
+    if (finishSteps) finishSteps();
+    if (show) planLoading.classList.add("hidden");
+    const message = friendlyAiError(err, "care plan");
+    if (show) {
+      carePlanStatus.textContent = message;
+      carePlanBtn.disabled = false;
+    }
+    return false;
+  } finally {
+    if (show) currentCancelPlan = null;
+  }
+}
+
+// When the connection returns, add the care plan to every queued case.
+async function syncQueuedCases() {
+  if (!isOnline()) return;
+  const queued = loadCases().filter(
+    (c) => !c.carePlan || c.carePlan.status === "queued"
+  );
+  for (let i = 0; i < queued.length; i += 1) {
+    const c = queued[i];
+    const show = Boolean(currentCase && c.id === currentCase.id);
+    await fetchCarePlanForCase(c, show);
+  }
+  renderCaseList();
+  refreshCarePlanArea();
 }
 
 function newCaseId() {
@@ -418,23 +615,41 @@ async function runTriage(patient) {
   if (demoMode) {
     return { triage: demoTriage(patient), source: "DEMO", isDemo: true };
   }
-  const result = await liveTriage(patient, (val) => {
-    const pct = Math.round(val * 100);
-    assessStatus.textContent = "Preparing the on-device model, " + pct + "% downloaded.";
-  });
-  if (result.data && result.data.level) {
-    return { triage: result.data, source: result.source, isDemo: false };
+  if (!isOnline()) {
+    return { triage: fallbackTriageFromText(patient), source: "FALLBACK", isDemo: false };
   }
-  return { triage: fallbackTriageFromText(patient), source: result.source, isDemo: false };
+  try {
+    const result = await liveTriage(patient, (val) => {
+      const pct = Math.round(val * 100);
+      assessStatus.textContent = "Preparing the on-device model, " + pct + "% downloaded.";
+    });
+    const triage = validateTriage(result.data);
+    if (triage) {
+      return { triage, source: result.source, isDemo: false };
+    }
+    return { triage: fallbackTriageFromText(patient), source: "FALLBACK", isDemo: false };
+  } catch (err) {
+    if (isTimeoutError(err)) throw err;
+    return { triage: fallbackTriageFromText(patient), source: "FALLBACK", isDemo: false };
+  }
 }
 
 async function runCarePlan(patient, triage) {
   if (demoMode) {
     return { plan: demoCarePlan(patient, triage), source: "DEMO", isDemo: true };
   }
-  const result = await liveCarePlan(patient, triage);
-  if (result.data && result.data.steps) {
-    return { plan: result.data, source: result.source, isDemo: false };
+  if (!isOnline()) {
+    throw new Error("offline");
+  }
+  try {
+    const result = await liveCarePlan(patient, triage);
+    const plan = validatePlan(result.data);
+    if (plan) {
+      return { plan, source: result.source, isDemo: false };
+    }
+  } catch (err) {
+    if (isTimeoutError(err)) throw err;
+    // Any other live failure falls through to the rules plan below.
   }
   const demo = demoCarePlan(patient, triage);
   return {
@@ -445,7 +660,7 @@ async function runCarePlan(patient, triage) {
       referral: demo.referral,
       followUp: demo.followUp + " (Live answer could not be read, so this plan comes from the on-device rules.)",
     },
-    source: result.source,
+    source: "FALLBACK",
     isDemo: false,
   };
 }
@@ -471,8 +686,8 @@ function renderVoiceChips() {
 
 function addVoiceTranscript(said) {
   const parts = said
-    .split(/[,;]|\band\b/i)
-    .map((p) => p.trim().replace(/^[a-z]/, (c) => c))
+    .split(/[,;]/)
+    .map((p) => p.trim().replace(/^[a-z]/, (c) => c.toUpperCase()))
     .filter((p) => p.length > 1);
   parts.forEach((p) => {
     const lower = p.toLowerCase();
@@ -494,7 +709,7 @@ caseForm.addEventListener("submit", async (event) => {
   const parts = [];
   if (typed) parts.push(typed);
   voiceSymptoms.forEach((s) => parts.push(s));
-  const text = parts.join(", ");
+  const text = parts.join(", ").slice(0, 500);
   if (!text) {
     assessStatus.textContent = "Describe the symptoms first, or load a sample case.";
     symptoms.focus();
@@ -504,15 +719,20 @@ caseForm.addEventListener("submit", async (event) => {
   voiceSymptoms = [];
   renderVoiceChips();
   const patient = {
-    label: patientLabel.value.trim() || "Patient",
+    label: patientLabel.value.trim().slice(0, 40) || "Patient",
     ageGroup: ageGroup.value,
     symptoms: text,
   };
   assessBtn.disabled = true;
   assessStatus.textContent = "";
   const finishSteps = showTriageLoading();
+  let cancelFn = null;
+  const cancelPromise = new Promise((resolve, reject) => {
+    cancelFn = () => reject(new Error("cancelled"));
+  });
+  currentCancelTriage = cancelFn;
   try {
-    const out = await runTriage(patient);
+    const out = await Promise.race([runTriage(patient), cancelPromise]);
     finishSteps();
     const c = {
       id: newCaseId(),
@@ -524,46 +744,30 @@ caseForm.addEventListener("submit", async (event) => {
       carePlan: null,
     };
     currentCase = c;
-    upsertCase(c);
+    const saved = upsertCase(c);
+    if (correctedCaseId && correctedCaseId !== c.id) {
+      const remaining = loadCases().filter((x) => x.id !== correctedCaseId);
+      saveCases(remaining);
+      correctedCaseId = null;
+      renderCaseList();
+    }
     showTriage(c, out.triage, out.source, out.isDemo);
-    assessStatus.textContent = "";
+    assessStatus.textContent = saved
+      ? ""
+      : "Could not save this case on the device, storage may be full. The triage result above is still shown.";
   } catch (err) {
     finishSteps();
     triageLoading.classList.add("hidden");
-    assessStatus.textContent =
-      "The on-device check failed: " + err.message + " Try again, or switch demo mode on.";
+    assessStatus.textContent = friendlyAiError(err, "on-device check");
   } finally {
+    currentCancelTriage = null;
     assessBtn.disabled = false;
   }
 });
 
 carePlanBtn.addEventListener("click", async () => {
   if (!currentCase) return;
-  if (!isOnline()) {
-    currentCase.carePlan = { status: "queued" };
-    upsertCase(currentCase);
-    refreshCarePlanArea();
-    return;
-  }
-  carePlanBtn.disabled = true;
-  carePlanStatus.textContent = "";
-  const finishSteps = showPlanLoading();
-  try {
-    const out = await runCarePlan(currentCase.patient, currentCase.triage);
-    finishSteps();
-    const plan = Object.assign({}, out.plan, { status: "ready" });
-    currentCase.carePlan = plan;
-    currentCase.planSource = out.source;
-    currentCase.planDemo = out.isDemo;
-    upsertCase(currentCase);
-    showPlan(currentCase, plan, out.source, out.isDemo);
-    carePlanStatus.textContent = "";
-  } catch (err) {
-    finishSteps();
-    planLoading.classList.add("hidden");
-    carePlanStatus.textContent = "The care plan failed: " + err.message + " Try again.";
-    carePlanBtn.disabled = false;
-  }
+  await fetchCarePlanForCase(currentCase, true);
 });
 
 function markForReview(noteEl, btnEl) {
@@ -577,6 +781,7 @@ function markForReview(noteEl, btnEl) {
 }
 
 function correctCase() {
+  if (currentCase) correctedCaseId = currentCase.id;
   triageCard.classList.add("hidden");
   planCard.classList.add("hidden");
   assessStatus.textContent =
@@ -618,6 +823,7 @@ function renderCaseList() {
     const viewBtn = el("button", "View", "btn btn-ghost btn-small");
     viewBtn.type = "button";
     viewBtn.addEventListener("click", () => {
+      correctedCaseId = null;
       currentCase = c;
       patientLabel.value = c.patient.label === "Patient" ? "" : c.patient.label;
       ageGroup.value = c.patient.ageGroup;
@@ -632,12 +838,12 @@ function renderCaseList() {
       }
     });
     actions.appendChild(viewBtn);
-    if ((!c.carePlan || c.carePlan.status === "queued") && isOnline()) {
+    if ((!c.carePlan || c.carePlan.status === "queued") && (isOnline() || demoMode)) {
       const syncBtn = el("button", "Sync care plan", "btn btn-small");
       syncBtn.type = "button";
       syncBtn.addEventListener("click", async () => {
         currentCase = c;
-        carePlanBtn.click();
+        await fetchCarePlanForCase(c, true);
       });
       actions.appendChild(syncBtn);
     }
@@ -729,8 +935,41 @@ if (!SpeechRecognition) {
   });
 }
 
-window.addEventListener("online", refreshNetPill);
+window.addEventListener("online", () => {
+  refreshNetPill();
+  syncQueuedCases();
+});
 window.addEventListener("offline", refreshNetPill);
+
+triageCancelBtn.addEventListener("click", () => {
+  if (currentCancelTriage) currentCancelTriage();
+});
+
+planCancelBtn.addEventListener("click", () => {
+  if (currentCancelPlan) currentCancelPlan();
+});
+
+deleteAllBtn.addEventListener("click", () => {
+  const cases = loadCases();
+  if (cases.length === 0) return;
+  if (!window.confirm("Delete all " + cases.length + " saved cases from this device? This cannot be undone.")) {
+    return;
+  }
+  saveCases([]);
+  correctedCaseId = null;
+  currentCase = null;
+  triageCard.classList.add("hidden");
+  planCard.classList.add("hidden");
+  renderCaseList();
+});
+
+// Register the service worker so the app shell loads offline. A failed
+// registration must never break the app, so errors are ignored.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}
 
 refreshNetPill();
 refreshDemoUI();

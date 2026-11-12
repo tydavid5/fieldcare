@@ -298,7 +298,7 @@ export function demoTriage(patient) {
         "Can the patient be taken to the nearest health centre at once?",
       ],
       redFlags,
-      possibleCauses: ["Serious illness", "Needs urgent review", "Refer at once"],
+      possibleCauses: [],
     };
   }
   for (let i = 0; i < PATTERNS.length; i += 1) {
@@ -460,12 +460,24 @@ const PLAN_LIBRARY = {
       "Send someone ahead to tell the health centre a patient is coming.",
     ],
     differential: [
-      { name: "Serious illness", note: "Danger signs are present. A doctor must review the patient." },
-      { name: "Needs urgent review", note: "The cause cannot be known safely in the village." },
-      { name: "Refer at once", note: "Time matters more than a name for the illness." },
+      { name: "Cause not known here, a doctor must review the patient.", note: "" },
     ],
     referral: "Refer now. This is urgent.",
     followUp: "Follow up at the health centre after referral.",
+  },
+  soonDefault: {
+    steps: [
+      "Do a malaria test today. Do not guess.",
+      "Check the temperature and breathing, and write both down.",
+      "Give paracetamol for fever or pain, following the dose for the patient's age.",
+      "Encourage fluids, small sips often.",
+      "Tell the patient to return today if the symptoms get worse.",
+    ],
+    differential: [
+      { name: "Cause not clear from these symptoms", note: "A malaria test and review today will narrow it down." },
+    ],
+    referral: "Refer at once if any danger sign appears, or if the patient is not improving by tomorrow.",
+    followUp: "Review tomorrow, or sooner if new symptoms appear.",
   },
   default: {
     steps: [
@@ -494,6 +506,9 @@ export function demoCarePlan(patient, triage) {
     if (PATTERNS[i].test(text)) {
       return PLAN_LIBRARY[PATTERNS[i].id] || PLAN_LIBRARY.default;
     }
+  }
+  if (triage.level === "SOON") {
+    return PLAN_LIBRARY.soonDefault;
   }
   return PLAN_LIBRARY.default;
 }
